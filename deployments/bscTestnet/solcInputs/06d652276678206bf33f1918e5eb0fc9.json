@@ -1,0 +1,42 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "contracts/Multisig.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\ninterface IBEP20 {\n    function transfer(address recipient, uint256 amount) external returns (bool);\n    function balanceOf(address account) external view returns (uint256);\n}\n\ncontract MultiSigWallet {\n    address[] public owners;\n    mapping(address => bool) public isOwner;\n    uint public required;\n\n    struct Transaction {\n        address token;       // BEP-20 token contract address (address(0) for BNB)\n        address to;          // Recipient address\n        uint256 value;       // Amount to transfer\n        bool executed;       // Status of execution\n        uint256 numApprovals; // Number of approvals received\n    }\n\n    mapping(uint => mapping(address => bool)) public approvals;\n    Transaction[] public transactions;\n\n    modifier onlyOwner() {\n        require(isOwner[msg.sender], \"Not an owner\");\n        _;\n    }\n\n    modifier txExists(uint _txId) {\n        require(_txId < transactions.length, \"Transaction does not exist\");\n        _;\n    }\n\n    modifier notExecuted(uint _txId) {\n        require(!transactions[_txId].executed, \"Transaction already executed\");\n        _;\n    }\n\n    modifier notApproved(uint _txId) {\n        require(!approvals[_txId][msg.sender], \"Transaction already approved\");\n        _;\n    }\n\n    constructor(address[] memory _owners, uint _required) {\n        require(_owners.length > 0, \"Owners required\");\n        require(\n            _required > 0 && _required <= _owners.length,\n            \"Invalid number of required approvals\"\n        );\n\n        for (uint i = 0; i < _owners.length; i++) {\n            address owner = _owners[i];\n            require(owner != address(0), \"Invalid owner\");\n            require(!isOwner[owner], \"Owner not unique\");\n\n            isOwner[owner] = true;\n            owners.push(owner);\n        }\n\n        required = _required;\n    }\n\n    receive() external payable {} // Allows the contract to receive BNB\n\n    function submitTransaction(address _token, address _to, uint256 _value)\n        public\n        onlyOwner\n    {\n        transactions.push(Transaction({\n            token: _token,\n            to: _to,\n            value: _value,\n            executed: false,\n            numApprovals: 0\n        }));\n    }\n\n    function approveTransaction(uint _txId)\n        public\n        onlyOwner\n        txExists(_txId)\n        notExecuted(_txId)\n        notApproved(_txId)\n    {\n        approvals[_txId][msg.sender] = true;\n        transactions[_txId].numApprovals += 1;\n    }\n\n    function executeTransaction(uint _txId)\n        public\n        onlyOwner\n        txExists(_txId)\n        notExecuted(_txId)\n    {\n        Transaction storage transaction = transactions[_txId];\n        require(\n            transaction.numApprovals >= required,\n            \"Cannot execute transaction\"\n        );\n\n        transaction.executed = true;\n\n        if (transaction.token == address(0)) {\n            // Transfer BNB\n            (bool success, ) = transaction.to.call{value: transaction.value}(\"\");\n            require(success, \"BNB transfer failed\");\n        } else {\n            // Transfer BEP-20 token\n            IBEP20 token = IBEP20(transaction.token);\n            require(\n                token.transfer(transaction.to, transaction.value),\n                \"Token transfer failed\"\n            );\n        }\n    }\n\n    function getTransaction(uint _txId)\n        public\n        view\n        returns (\n            address token,\n            address to,\n            uint256 value,\n            bool executed,\n            uint256 numApprovals\n        )\n    {\n        Transaction storage transaction = transactions[_txId];\n        return (\n            transaction.token,\n            transaction.to,\n            transaction.value,\n            transaction.executed,\n            transaction.numApprovals\n        );\n    }\n\n    function getOwners() public view returns (address[] memory) {\n        return owners;\n    }\n\n    function getTransactionCount() public view returns (uint) {\n        return transactions.length;\n    }\n\n    function getApprovals(uint _txId) public view returns (uint256) {\n        return transactions[_txId].numApprovals;\n    }\n}\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 20
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "storageLayout",
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "evm.gasEstimates",
+          "storageLayout"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "evmVersion": "paris",
+    "metadata": {
+      "useLiteralContent": true
+    },
+    "libraries": {
+      "": {
+        "__CACHE_BREAKER__": "0x00000000d41867734bbee4c6863d9255b2b06ac1"
+      }
+    }
+  }
+}
